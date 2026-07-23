@@ -1,0 +1,81 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    container_name: sms-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sms}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sms_password}
+      POSTGRES_DB: ${POSTGRES_DB:-sms}
+    ports:
+      - "5432:5432"
+    volumes:
+      - sms_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sms}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: sms-mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - sms_mosquitto_data:/mosquitto/data
+      - sms_mosquitto_log:/mosquitto/log
+
+  backend:
+    build:
+      context: ./sms-backend
+    container_name: sms-backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-sms}:${POSTGRES_PASSWORD:-sms_password}@postgres:5432/${POSTGRES_DB:-sms}
+      MQTT_URL: mqtt://mosquitto:1883
+    ports:
+      - "4000:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+    command: sh -c "npx prisma migrate deploy --schema src/db/schema.prisma && node src/server.js"
+
+  frontend:
+    build:
+      context: ./zetdc-sms
+    container_name: zetdc-sms
+    restart: unless-stopped
+    environment:
+      VITE_API_URL: http://localhost:4000
+      VITE_WS_URL: http://localhost:4000
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+  simulator:
+    build:
+      context: ./sms-backend
+    container_name: sms-simulator
+    restart: unless-stopped
+    environment:
+      MQTT_URL: mqtt://mosquitto:1883
+      SIM_SITE_COUNT: ${SIM_SITE_COUNT:-3}
+      SIM_INTERVAL_MS: ${SIM_INTERVAL_MS:-7000}
+    depends_on:
+      - mosquitto
+    command: node src/simulator/site-simulator.js
+
+volumes:
+  sms_pg_data:
+  sms_mosquitto_data:
+  sms_mosquitto_log:

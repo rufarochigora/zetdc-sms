@@ -1,0 +1,104 @@
+// Prisma schema for the Substation Monitoring System (SMS)
+// Run migrations with: npx prisma migrate dev --schema src/db/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Site {
+  id           String   @id @default(uuid())
+  name         String
+  voltageLevel String // "33kV" or "11kV"
+  location     String?
+  status       String   @default("unknown") // online | offline | stale
+  createdAt    DateTime @default(now())
+
+  breakers     Breaker[]
+  batteryBanks BatteryBank[]
+  transformers Transformer[]
+  relays       Relay[]
+  alarms       Alarm[]
+  readings     Reading[]
+}
+
+model BatteryBank {
+  id                  String  @id @default(uuid())
+  siteId              String
+  site                Site    @relation(fields: [siteId], references: [id])
+  chargerOk           Boolean @default(true)
+  lowVoltageThreshold Float   @default(46.0) // example for 48V bank
+
+  @@index([siteId])
+}
+
+model Breaker {
+  id                   String  @id @default(uuid())
+  siteId               String
+  site                 Site    @relation(fields: [siteId], references: [id])
+  label                String // "HV Breaker", "LV Breaker"
+  isClosed             Boolean @default(true)
+  operationCount       Int     @default(0)
+  maintenanceThreshold Int     @default(2000)
+
+  @@index([siteId])
+}
+
+model Transformer {
+  id        String  @id @default(uuid())
+  siteId    String
+  site      Site    @relation(fields: [siteId], references: [id])
+  label     String
+  energized Boolean @default(true)
+
+  @@index([siteId])
+}
+
+model Relay {
+  id         String  @id @default(uuid())
+  siteId     String
+  site       Site    @relation(fields: [siteId], references: [id])
+  label      String
+  lastTarget String? // e.g. "Overcurrent", "Earth Fault"
+
+  @@index([siteId])
+}
+
+model Reading {
+  id        BigInt   @id @default(autoincrement())
+  siteId    String
+  site      Site     @relation(fields: [siteId], references: [id])
+  metric    String // "battery_voltage", "battery_current", etc.
+  value     Float
+  timestamp DateTime @default(now())
+
+  @@index([siteId, metric, timestamp])
+}
+
+model Alarm {
+  id             String    @id @default(uuid())
+  siteId         String
+  site           Site      @relation(fields: [siteId], references: [id])
+  type           String // "low_battery" | "charger_fault" | "breaker_maintenance" | "relay_operation" | "transformer_deenergized" | "site_offline"
+  severity       String // "info" | "warning" | "critical"
+  message        String
+  state          String    @default("new") // new | acknowledged | cleared
+  acknowledgedBy String?
+  acknowledgedAt DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([siteId, state])
+  @@index([type, state])
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  role         String // "operator" | "engineer" | "admin"
+  createdAt    DateTime @default(now())
+}
