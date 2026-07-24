@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import zetdcLogo from '../zetdcLogo.png';
 
 export default function Login() {
   const { login, error } = useAuth();
@@ -21,9 +22,10 @@ export default function Login() {
     <div className="min-h-screen flex items-center justify-center bg-bg px-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <p className="font-mono text-xs uppercase tracking-[0.2em] text-accent">Substation Monitoring System</p>
-          <h1 className="text-2xl font-semibold text-ink mt-2">Sign in</h1>
-        </div>
+     <img src={zetdcLogo} alt="ZETDC" className="h-12 w-auto mx-auto mb-3" />
+     <p className="font-mono text-xs uppercase tracking-[0.2em] text-accent">Substation Monitoring System</p>
+     <h1 className="text-2xl font-semibold text-ink mt-2">Sign in</h1>
+   </div>
 
         <form onSubmit={handleSubmit} className="bg-surface border border-line rounded-lg p-6 space-y-4">
           <div>

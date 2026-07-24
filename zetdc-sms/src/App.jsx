@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate, Link } from 'react-router-dom';
+import zetdcLogo from './zetdcLogo.png';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AlarmProvider, useAlarmContext } from './context/AlarmContext';
 import Login from './pages/Login';
@@ -22,9 +23,13 @@ function TopNav() {
   return (
     <header className="border-b border-line bg-surface">
       <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
-        <Link to="/" className="font-mono text-sm font-semibold text-ink tracking-wide">
-          SMS <span className="text-accent">●</span>
-        </Link>
+        <Link to="/" className="flex items-center gap-2">
+     <img src={zetdcLogo} alt="ZETDC" className="h-7 w-auto" />
+     <span className="font-mono text-sm font-semibold text-ink tracking-wide">
+       SMS <span className="text-accent">●</span>
+     </span>
+   </Link>
+
         <div className="flex items-center gap-4">
           {user && (
             <span className="text-xs font-mono text-muted">

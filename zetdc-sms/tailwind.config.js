@@ -24,7 +24,7 @@ export default {
         sans: ['"IBM Plex Sans"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
       },
       animation: {
-        pulse-slow: 'pulse-ring 2.4s cubic-bezier(0.4,0,0.6,1) infinite',
+        'pulse-slow': 'pulse-ring 2.4s cubic-bezier(0.4,0,0.6,1) infinite',
       },
       keyframes: {
         'pulse-ring': {

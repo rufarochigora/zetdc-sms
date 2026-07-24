@@ -1,8 +1,8 @@
 # SMS Deployment Guide — GitHub → Render → Vercel (no Docker Desktop needed)
 
-Covers: pushing the repo to GitHub, deploying `sms-backend` + Mosquitto + Postgres on Render,
-running the `zetdc-sms` frontend locally against the live Render backend, and deploying it to
-Vercel.
+Covers: pushing the repo to GitHub, wiring up a free HiveMQ Cloud MQTT broker, deploying
+`sms-backend` + Postgres on Render, running the `zetdc-sms` frontend locally against the live
+Render backend, and deploying it to Vercel.
 
 Docker Desktop is **not required for any of this** — Render builds your Docker images in the
 cloud from the `Dockerfile`s already in the repo, and the frontend runs with a plain
@@ -14,7 +14,7 @@ Repo layout this guide assumes:
 sms/
 ├── sms-backend/       # Express API, MQTT ingestion, alarm engine, simulator
 ├── zetdc-sms/         # React frontend
-├── mosquitto/         # MQTT broker config + Dockerfile
+├── mosquitto/         # MQTT broker config + Dockerfile — unused; broker is HiveMQ Cloud, see MQTT-SETUP.md
 ├── docker-compose.yml # only used if you later get Docker Desktop working locally — not needed below
 └── .env.example
 ```
@@ -59,10 +59,17 @@ dist/
 
 ## 2. Deploy the backend on Render
 
-You'll create 4 Render services, in this order (each depends on the one before it existing):
-**Postgres → Mosquitto → Backend → Simulator**. All of this happens in the Render dashboard —
-Render clones your GitHub repo and builds each service's `Dockerfile` itself, so nothing needs
-to build or run on your machine.
+You'll create 3 Render services, in this order (each depends on the one before it existing):
+**Postgres → Backend → Simulator**. All of this happens in the Render dashboard — Render clones
+your GitHub repo and builds each service's `Dockerfile` itself, so nothing needs to build or run
+on your machine.
+
+> **MQTT broker note:** the original plan (Section 2.2 below in earlier versions of this guide)
+> was to self-host Mosquitto as a Render Private Service — but Private Services have no free
+> tier on Render (Starter, $7/mo minimum). Instead, this project uses **HiveMQ Cloud's free
+> Serverless plan** as the broker. See **[MQTT-SETUP.md](./MQTT-SETUP.md)** for the full signup
+> and wiring steps — do that first, then come back here for `MQTT_URL` in steps 2.2 and 2.3
+> below.
 
 ### 2.1 Postgres
 
@@ -70,25 +77,15 @@ Render dashboard → **New → PostgreSQL**.
 - Name it `sms-postgres`, pick a region, pick a paid plan if you want the DB to persist (free
   Postgres instances on Render expire).
 - Once it's provisioned, open **Info** and copy the **Internal Database URL** — you'll use this
-  as `DATABASE_URL` in step 2.3.
+  as `DATABASE_URL` in step 2.2.
 - Use the **PSQL Command** shown on that page to open a shell, then run:
   ```sql
   CREATE EXTENSION IF NOT EXISTS timescaledb;
   ```
 - Leave this tab open — you'll come back after the backend's first deploy to run
-  `create_hypertable(...)` once the `Reading` table exists (step 2.3).
+  `create_hypertable(...)` once the `Reading` table exists (step 2.2).
 
-### 2.2 Mosquitto (MQTT broker)
-
-Render dashboard → **New → Private Service**.
-- Connect your GitHub repo, set **Root Directory** to `mosquitto`.
-- Render auto-detects the `Dockerfile` in that folder — it bakes in
-  `mosquitto/config/mosquitto.conf`.
-- No environment variables needed. Private services get no public URL, which is correct here.
-- Deploy, then open **Connect** and note the internal address (e.g. `sms-mosquitto:1883`). You'll
-  need this for both the backend and the simulator.
-
-### 2.3 Backend (Web Service)
+### 2.2 Backend (Web Service)
 
 Render dashboard → **New → Web Service**.
 - Connect the repo, **Root Directory**: `sms-backend`. Runtime: Docker (auto-detected from
@@ -103,7 +100,7 @@ Render dashboard → **New → Web Service**.
 - **Environment variables**:
   ```
   DATABASE_URL=<Internal Database URL from step 2.1>
-  MQTT_URL=mqtt://<mosquitto internal address from step 2.2>
+  MQTT_URL=mqtts://<username>:<password>@<host>:8883   # from MQTT-SETUP.md
   JWT_SECRET=<long random string>
   JWT_EXPIRES_IN=12h
   SITE_OFFLINE_TIMEOUT_MS=120000
@@ -128,14 +125,14 @@ Render dashboard → **New → Web Service**.
   ```
   This creates your admin login and three demo substations (`site-1`, `site-2`, `site-3`).
 
-### 2.4 Simulator (Background Worker)
+### 2.3 Simulator (Background Worker)
 
 Render dashboard → **New → Background Worker**.
 - Connect the repo, **Root Directory**: `sms-backend` (same image as the backend service).
 - **Start Command**: override to `node src/simulator/site-simulator.js`.
 - **Environment variables**:
   ```
-  MQTT_URL=mqtt://<same mosquitto internal address as 2.2>
+  MQTT_URL=mqtts://<same HiveMQ Cloud credentials as 2.2>
   SIM_SITE_COUNT=3
   SIM_INTERVAL_MS=7000
   ```
@@ -163,18 +160,18 @@ VITE_API_URL=https://sms-backend.onrender.com
 VITE_WS_URL=https://sms-backend.onrender.com
 ```
 
-(Use your actual Render backend URL from step 2.3 — it'll match this exactly if you named the
+(Use your actual Render backend URL from step 2.2 — it'll match this exactly if you named the
 service `sms-backend`.)
 
 ```bash
 npm run dev
 ```
 
-Open http://localhost:5173, log in with the admin credentials from step 2.3. You should see
+Open http://localhost:5173, log in with the admin credentials from step 2.2. You should see
 `site-1`, `site-2`, `site-3` populate live within a few seconds — this confirms the whole
 deployed backend chain works before you push the frontend anywhere.
 
-> If login fails or the socket won't connect, go back to step 2.3 and set `CORS_ORIGIN` on the
+> If login fails or the socket won't connect, go back to step 2.2 and set `CORS_ORIGIN` on the
 > Render backend to `http://localhost:5173` (comma-separate multiple origins if you also want
 > the Vercel one working at the same time — check `sms-backend/src/config/env.js` /
 > `server.js`'s `cors()` call handles a single origin string; for multiple origins you'd extend
@@ -227,9 +224,9 @@ redeploy.
 | Step | Where | What you're getting |
 |---|---|---|
 | 1 | GitHub | Source of truth both Render and Vercel deploy from |
+| — | HiveMQ Cloud | Free MQTT broker (Serverless plan) — see MQTT-SETUP.md |
 | 2.1 | Render | Postgres + TimescaleDB (`sms-postgres`) |
-| 2.2 | Render | Mosquitto (internal only, `sms-mosquitto`) |
-| 2.3 | Render | Backend API + WebSocket + MQTT ingestion — public URL (`sms-backend`) |
-| 2.4 | Render | Simulator — fakes telemetry until real RTUs exist |
+| 2.2 | Render | Backend API + WebSocket + MQTT ingestion — public URL (`sms-backend`) |
+| 2.3 | Render | Simulator — fakes telemetry until real RTUs exist |
 | 3 | Your machine | `zetdc-sms` running locally (`npm run dev`, no Docker) against the live backend |
 | 4 | Vercel | `zetdc-sms` deployed and public |
